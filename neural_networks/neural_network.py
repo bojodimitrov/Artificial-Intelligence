@@ -23,6 +23,12 @@ class Neuron:
             neuron_base_value += value * self.weights[i]
         self.value = activation_function(neuron_base_value + bias)
 
+    def get_weights(self):
+        """
+        Returns weights
+        """
+        return self.weights
+
     def get_value(self):
         """
         Returns neuron value
@@ -54,25 +60,27 @@ class SingleHiddenLayerNetwork:
     """
     Represents neural network with just one hidden layer
     """
-    def __init__(self, number_of_inputs, number_of_hidden_neurons, number_of_outputs):
-        self.training_constant = 0.2
-        self.inputs = {'bias': 1, 'neurons': []}
+    def __init__(self, number_of_inputs, number_of_hidden_neurons, number_of_outputs, learning_rate):
+        self.learning_rate = learning_rate
+        self.inputs = {'bias': [], 'neurons': []}
         self.outputs = []
-        self.hidden_layer = {'bias': 1, 'neurons': []}
+        self.hidden_layer = {'bias': [], 'neurons': []}
 
         for _ in range(number_of_inputs):
             self.inputs['neurons'].append(InputNeuron(0))
         for _ in range(number_of_hidden_neurons):
             rand_weights = []
             for _ in range(number_of_inputs):
-                rand_weights.append(random.uniform(-1, 1))
+                rand_weights.append(random.uniform(0, 1))
             self.hidden_layer['neurons'].append(Neuron(rand_weights))
+            self.inputs['bias'].append(random.uniform(0, 1))
 
         for _ in range(number_of_outputs):
             rand_weights = []
             for _ in range(number_of_hidden_neurons):
-                rand_weights.append(random.uniform(-1, 1))
+                rand_weights.append(random.uniform(0, 1))
             self.outputs.append(Neuron(rand_weights))
+            self.hidden_layer['bias'].append(random.uniform(0,1))
 
     def feed_forward(self, inputs, activation):
         """
@@ -81,23 +89,45 @@ class SingleHiddenLayerNetwork:
         for i, value in enumerate(inputs):
             self.inputs['neurons'][i].set_value(value)
 
-        for hidden_neuron in self.hidden_layer['neurons']:
-            hidden_neuron.calculate([input_neuron.get_value() for input_neuron in self.inputs['neurons']], activation, self.inputs['bias'])
+        for i, hidden_neuron in enumerate(self.hidden_layer['neurons']):
+            hidden_neuron.calculate([input_neuron.get_value() for input_neuron in self.inputs['neurons']], activation, self.inputs['bias'][i])
 
-        for output_neuron in self.outputs:
-            output_neuron.calculate([hidden_neuron.get_value() for hidden_neuron in self.hidden_layer['neurons']], activation, self.hidden_layer['bias'])
+        for i, output_neuron in enumerate(self.outputs):
+            output_neuron.calculate([hidden_neuron.get_value() for hidden_neuron in self.hidden_layer['neurons']], activation, self.hidden_layer['bias'][i])
         return [output_neuron.get_value() for output_neuron in self.outputs]
 
     def backpropagation(self, inputs, desired):
         """
         Applies backpropagation algorithm for correcting weights of the network
         """
-        outputs = self.feed_forward(inputs, sigmoid)
-        for i, output in enumerate(outputs):
-            error = (desired[i] - outputs)
+        self.feed_forward(inputs, sigmoid)
 
+        output_layer_corrections = {}
+        for i, output in enumerate(self.outputs):
+            delta_output = -(desired[i] - output.get_value()) * sigmoid_derivative(output.get_value())
+            output_layer_corrections[i] = []
+            for hidden_neuron in self.hidden_layer['neurons']:
+                output_layer_corrections[i].append(-self.learning_rate * delta_output * hidden_neuron.get_value())
+            self.hidden_layer['bias'][i] -= delta_output * self.learning_rate
 
+        hidden_layer_corrections = {}
+        for i, hidden_neuron in enumerate(self.hidden_layer['neurons']):
+            hidden_layer_corrections[i] = []
+            delta_total = 0
+            for j, _ in enumerate(hidden_neuron.get_weights()):
+                delta_hidden = 0
+                #sum of the output deltas
+                for k, output_neuron  in enumerate(self.outputs):
+                    delta_hidden += -(desired[k] - output_neuron.get_value()) * sigmoid_derivative(output_neuron.get_value()) * output_neuron.get_weights()[i]
+                delta_total = delta_hidden * sigmoid_derivative(hidden_neuron.get_value()) 
+                total_error_derivative = delta_total * self.inputs['neurons'][j].get_value()
+                hidden_layer_corrections[i].append(-self.learning_rate * total_error_derivative)
+            self.inputs['bias'][i] -= delta_total * self.learning_rate
 
+        for i, output_neuron in enumerate(self.outputs):
+            output_neuron.update_weights(output_layer_corrections[i])
+        for i, hidden_neuron in enumerate(self.hidden_layer['neurons']):
+            hidden_neuron.update_weights(hidden_layer_corrections[i])
 
 
 class Perceptron:
@@ -106,7 +136,7 @@ class Perceptron:
     """
     def __init__(self, number_of_inputs, number_of_outputs):
         self.bias = 1
-        self.training_constant = 0.2
+        self.learning_rate = 0.2
         self.inputs = []
         self.outputs = []
 
@@ -138,7 +168,7 @@ class Perceptron:
             error = desired - output_neuron.get_value()
             corrections = []
             for _, neuron in enumerate(self.inputs):
-                corrections.append(self.training_constant * error * neuron.get_value())
+                corrections.append(self.learning_rate * error * neuron.get_value())
             output_neuron.update_weights(corrections)
 
 
@@ -190,10 +220,24 @@ def test_batch(perceptron):
             wrong += 1
     return right / (right + wrong)
 
+def train_network_batch(network):
+    """
+    Trains network
+    """
+    for _ in range(50000):
+        a = random.randint(0, 1)
+        b = random.randint(0, 1)
+        result = a ^ b
+        network.backpropagation([a, b], [result])
+
+
 #PERC = Perceptron(2, 1)
 #train_batch(PERC)
 #print(test_batch(PERC))
 
-NEURAL_NETWORK = SingleHiddenLayerNetwork(2, 2, 1)
+NEURAL_NETWORK = SingleHiddenLayerNetwork(2, 2, 1, 2)
+train_network_batch(NEURAL_NETWORK)
 print(NEURAL_NETWORK.feed_forward([0, 0], sigmoid))
-
+print(NEURAL_NETWORK.feed_forward([0, 1], sigmoid))
+print(NEURAL_NETWORK.feed_forward([1, 0], sigmoid))
+print(NEURAL_NETWORK.feed_forward([1, 1], sigmoid))
